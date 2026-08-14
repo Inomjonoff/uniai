@@ -27,20 +27,24 @@ async def init_database() -> None:
         await conn.run_sync(Base.metadata.create_all)
         logger.info("All database tables created or verified.")
 
-    # Fix any legacy enum column types on PostgreSQL to standard VARCHAR
+    # Fix any legacy column types on PostgreSQL to universal types (JSON/VARCHAR)
     if is_postgres:
-        enum_conversions = [
+        conversions = [
             "ALTER TABLE knowledge DROP COLUMN IF EXISTS verification_status CASCADE;",
             "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS verification_status VARCHAR(50) DEFAULT 'unverified';",
             "ALTER TABLE knowledge DROP COLUMN IF EXISTS trust_level CASCADE;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS trust_level VARCHAR(50) DEFAULT 'TELEGRAM_GROUP';"
+            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS trust_level VARCHAR(50) DEFAULT 'TELEGRAM_GROUP';",
+            "ALTER TABLE knowledge_embeddings DROP COLUMN IF EXISTS embedding CASCADE;",
+            "ALTER TABLE knowledge_embeddings ADD COLUMN IF NOT EXISTS embedding JSON;",
+            "ALTER TABLE attachments DROP COLUMN IF EXISTS embedding CASCADE;",
+            "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS embedding JSON;"
         ]
-        for stmt in enum_conversions:
+        for stmt in conversions:
             try:
                 async with engine.begin() as conn:
                     await conn.execute(text(stmt))
             except Exception as e:
-                logger.debug(f"Enum conversion note: {e}")
+                logger.debug(f"Conversion note: {e}")
 
     # Universal column migrations (works on both PostgreSQL and SQLite)
     migration_columns = [
