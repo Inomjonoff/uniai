@@ -53,7 +53,8 @@ async def lifespan(app: FastAPI):
         "callback_query",
         "business_connection",
         "business_message",
-        "edited_business_message"
+        "edited_business_message",
+        "deleted_business_messages"
     ]
 
     # 5. Configure Webhook or Polling mode

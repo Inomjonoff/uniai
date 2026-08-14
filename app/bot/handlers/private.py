@@ -204,18 +204,28 @@ async def handle_private_text(message: Message, bot: Bot):
             await message.answer(chunk)
 
 
+from aiogram.types import Message, BusinessConnection, BusinessMessagesDeleted
+
+
 @private_router.business_connection()
 async def handle_business_connection(connection: BusinessConnection):
     """Handles Telegram Business account secretary mode connection updates."""
-    logger.info(f"Telegram Business Connection update: user={connection.user.id}, can_reply={connection.can_reply}, is_enabled={connection.is_enabled}")
+    logger.info(
+        f"Telegram Business Connection: user={connection.user.id}, "
+        f"auth_date={connection.date}, can_reply={connection.can_reply}, is_enabled={connection.is_enabled}"
+    )
 
 
 @private_router.business_message()
+@private_router.edited_business_message()
 async def handle_business_message(message: Message, bot: Bot):
     """Handles messages received when bot operates as Secretary/Chatbot in Telegram Business."""
     user_text = message.text or message.caption or ""
     if not user_text:
         return
+
+    # Check if message is from the business owner or an external customer
+    is_owner = bool(message.from_user and message.from_user.id in settings.admin_ids_set)
 
     async with async_session_factory() as session:
         agent = AssistantAgent(session=session)
@@ -231,4 +241,21 @@ async def handle_business_message(message: Message, bot: Bot):
     if reply_text:
         chunks = split_message_text(reply_text)
         for chunk in chunks:
-            await message.reply(chunk)
+            if message.business_connection_id:
+                try:
+                    await bot.send_message(
+                        chat_id=message.chat.id,
+                        text=chunk,
+                        business_connection_id=message.business_connection_id
+                    )
+                except Exception as e:
+                    logger.error(f"Error sending business message: {e}")
+                    await message.reply(chunk)
+            else:
+                await message.reply(chunk)
+
+
+@private_router.deleted_business_messages()
+async def handle_deleted_business_messages(event: BusinessMessagesDeleted):
+    """Logs deleted business messages."""
+    logger.info(f"Business messages deleted in chat {event.chat.id}: {len(event.message_ids)} messages")
