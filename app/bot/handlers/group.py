@@ -1,9 +1,12 @@
 """
 Group and Supergroup message handlers for UNICON-SOFT AI Assistant.
-Functions as a silent observer by default (Learning = ON, Reply = OFF).
+Functions as a silent observer by default (Learning = ON, Reply = OFF),
+with support for mentions, reply mode toggle (/reply_on, /reply_off), and intelligent Q&A.
 """
+import re
 from aiogram import Router, F, Bot
 from aiogram.types import Message
+from aiogram.filters import Command
 from aiogram.enums import ChatType
 from sqlalchemy import select
 
@@ -11,6 +14,8 @@ from app.db.session import async_session_factory
 from app.db.models import TelegramGroup
 from app.knowledge.repository import KnowledgeRepository
 from app.ai.agent import AssistantAgent
+from app.config import settings
+from app.utils.telegram_helpers import split_message_text
 from app.utils.logger import logger
 
 group_router = Router()
@@ -18,11 +23,44 @@ group_router = Router()
 group_router.message.filter(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 
 
+@group_router.message(Command("reply_on"))
+async def cmd_reply_on(message: Message):
+    """Enables active AI replies in this group."""
+    async with async_session_factory() as session:
+        repo = KnowledgeRepository(session)
+        group = await repo.get_or_create_group(
+            chat_id=message.chat.id,
+            title=message.chat.title or "Group",
+            username=message.chat.username
+        )
+        group.reply_enabled = True
+        await session.commit()
+    
+    await message.reply("✅ Ushbu guruhda botning faol javob berish rejimi yoqildi. Endi bot savollarga to'g'ridan-to'g'ri javob beradi.")
+
+
+@group_router.message(Command("reply_off"))
+async def cmd_reply_off(message: Message):
+    """Disables active AI replies (switches to silent learner mode)."""
+    async with async_session_factory() as session:
+        repo = KnowledgeRepository(session)
+        group = await repo.get_or_create_group(
+            chat_id=message.chat.id,
+            title=message.chat.title or "Group",
+            username=message.chat.username
+        )
+        group.reply_enabled = False
+        await session.commit()
+    
+    await message.reply("🔇 Guruhda bot jim rejimga (faqat o'rganish) o'tkazildi. Savol berish uchun botni @positronaibot deb tag qiling.")
+
+
 @group_router.message()
 async def handle_group_message(message: Message, bot: Bot):
     """
     Listens to messages in technical groups.
     Stores raw messages and silently triggers background learning without spamming.
+    Replies when mentioned or when reply_enabled is True.
     """
     chat_id = message.chat.id
     group_title = message.chat.title or f"Group {chat_id}"
@@ -65,23 +103,34 @@ async def handle_group_message(message: Message, bot: Bot):
     # 2. Check if bot was explicitly mentioned or replied to
     bot_info = await bot.get_me()
     is_mentioned = False
-    if bot_info.username and f"@{bot_info.username.lower()}" in text.lower():
-        is_mentioned = True
-    elif message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.id == bot_info.id:
+    clean_text = text
+
+    if bot_info.username:
+        pattern = re.compile(rf"@{re.escape(bot_info.username)}", re.IGNORECASE)
+        if pattern.search(text):
+            is_mentioned = True
+            clean_text = pattern.sub("", text).strip()
+
+    if message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.id == bot_info.id:
         is_mentioned = True
 
-    # 3. Only reply if Reply is ON for this group OR explicitly mentioned
-    if (group.reply_enabled or is_mentioned) and text.strip():
-        # Remove bot mention tag from text
-        clean_text = text.replace(f"@{bot_info.username}", "").strip() if bot_info.username else text
-        if clean_text:
-            async with async_session_factory() as session:
-                agent = AssistantAgent(session=session)
-                result = await agent.process_user_message(
-                    telegram_user_id=message.from_user.id,
-                    user_text=clean_text,
-                    sender_name=sender_name
-                )
-                reply = result.get("reply_text")
-                if reply:
-                    await message.reply(reply)
+    # Check if admin is calling the bot directly with "bot ..." or "ai ..."
+    if message.from_user and message.from_user.id in settings.admin_ids_set:
+        if text.lower().startswith(("bot,", "bot ", "ai,", "ai ")):
+            is_mentioned = True
+            clean_text = re.sub(r"^(bot|ai)[,\s]+", "", text, flags=re.IGNORECASE).strip()
+
+    # 3. Reply if Reply mode is ON for this group OR explicitly mentioned
+    if (group.reply_enabled or is_mentioned) and clean_text.strip():
+        async with async_session_factory() as session:
+            agent = AssistantAgent(session=session)
+            result = await agent.process_user_message(
+                telegram_user_id=message.from_user.id if message.from_user else 0,
+                user_text=clean_text,
+                sender_name=sender_name
+            )
+            reply = result.get("reply_text")
+            if reply:
+                chunks = split_message_text(reply)
+                for chunk in chunks:
+                    await message.reply(chunk)
