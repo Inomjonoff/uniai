@@ -47,11 +47,14 @@ async def cb_refresh_settings(callback: CallbackQuery):
         s_vision = res_vision.scalar_one_or_none()
         vision_val = s_vision.value_json if s_vision else True
 
+    learn_status = "🟢 ON" if auto_learn_val else "🔴 OFF"
+    vision_status = "🟢 ON" if vision_val else "🔴 OFF"
+
     text = (
         "⚙️ <b>UNICON-SOFT AI Boshqaruv Paneli</b>\n\n"
         f"• <b>Gemini AI:</b> 🟢 Faol ({settings.gemini_model})\n"
-        f"• <b>Auto Learning:</b> {'🟢 ON' if auto_learn_val else '🔴 OFF'}\n"
-        f"• <b>Screenshot Vision:</b> {'🟢 ON' if vision_val else '🔴 OFF'}\n"
+        f"• <b>Auto Learning:</b> {learn_status}\n"
+        f"• <b>Screenshot Vision:</b> {vision_status}\n"
         f"• <b>Ulangan guruhlar:</b> {len(groups)} ta\n"
         f"• <b>Bilimlar bazasi:</b> {total_k:,} ta yozuv\n"
         f"• <b>O'rganish kutilayotganlar:</b> {len(pending_items)} ta savol/muammo\n"
@@ -114,11 +117,14 @@ async def cb_group_config(callback: CallbackQuery):
         await callback.answer("Guruh topilmadi.", show_alert=True)
         return
 
+    learn_status = "🟢 Faol" if group.learning_enabled else "🔴 O'chirilgan"
+    reply_status = "🟢 Faol (Har bir savolga javob beradi)" if group.reply_enabled else "🔴 O'chirilgan (Jim kuzatadi)"
+
     text = (
         f"👥 <b>Guruh:</b> {group.title}\n"
         f"🆔 ID: <code>{group.chat_id}</code>\n\n"
-        f"• <b>O'rganish (Learning):</b> {'🟢 Faol' if group.learning_enabled else '🔴 O\'chirilgan'}\n"
-        f"• <b>Javob berish (Reply):</b> {'🟢 Faol (Har bir savolga javob beradi)' if group.reply_enabled else '🔴 O\'chirilgan (Jim kuzatadi)'}\n"
+        f"• <b>O'rganish (Learning):</b> {learn_status}\n"
+        f"• <b>Javob berish (Reply):</b> {reply_status}\n"
     )
     await callback.message.edit_text(
         text,
@@ -190,11 +196,14 @@ async def cb_unresolved_view(callback: CallbackQuery):
         await cb_unresolved_queue(callback)
         return
 
+    sender = item.sender_name or "Noma'lum"
+    formatted_date = item.created_at.strftime("%Y-%m-%d %H:%M")
+
     text = (
         f"❓ <b>Noma'lum Savol / Muammo:</b>\n"
         f"<i>“{item.query_text}”</i>\n\n"
-        f"👤 <b>Yuborgan:</b> {item.sender_name or 'Noma\'lum'}\n"
-        f"📅 <b>Sana:</b> {item.created_at.strftime('%Y-%m-%d %H:%M')}\n\n"
+        f"👤 <b>Yuborgan:</b> {sender}\n"
+        f"📅 <b>Sana:</b> {formatted_date}\n\n"
         f"Ushbu savolga yechim kiritish uchun pastdagi <b>“✍️ Yechim kiritish”</b> tugmasini bosing:"
     )
     await callback.message.edit_text(text, reply_markup=get_unresolved_detail_keyboard(query_id))
@@ -265,12 +274,17 @@ async def cb_msg_view(callback: CallbackQuery):
         await callback.answer("Xabar topilmadi.", show_alert=True)
         return
 
+    sender = msg.sender_name or "Noma'lum"
+    username = msg.username or "-"
+    formatted_date = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+    msg_text = msg.text or "[Matnsiz media]"
+
     text = (
         f"📨 <b>Murojaat Tafsiloti:</b>\n\n"
-        f"👤 <b>Yuboruvchi:</b> {msg.sender_name or 'Noma\'lum'} (@{msg.username or '-'})\n"
-        f"📅 <b>Vaqt:</b> {msg.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"👤 <b>Yuboruvchi:</b> {sender} (@{username})\n"
+        f"📅 <b>Vaqt:</b> {formatted_date}\n"
         f"📄 <b>Turi:</b> {msg.media_type}\n\n"
-        f"💬 <b>Matn:</b>\n<i>{msg.text or '[Matnsiz media]'}</i>"
+        f"💬 <b>Matn:</b>\n<i>{msg_text}</i>"
     )
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -295,11 +309,13 @@ async def cb_knowledge_stats(callback: CallbackQuery):
     for idx, it in enumerate(recent_items, 1):
         items_text += f"{idx}. <b>{it.title[:35]}</b>\n   <i>{it.solution[:60]}...</i>\n"
 
+    summary_list = items_text if items_text else "Hozircha bilimlar mavjud emas."
+
     text = (
         f"📚 <b>Bilimlar Bazasi Statistikasi:</b>\n\n"
         f"• <b>Jami bilimlar:</b> {total_k:,} ta\n"
         f"• <b>Bugun o'rganilgan:</b> {today_k} ta\n\n"
-        f"<b>So'nggi bilimlar:</b>\n{items_text if items_text else 'Hozircha bilimlar yo\'q.'}"
+        f"<b>So'nggi bilimlar:</b>\n{summary_list}"
     )
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
