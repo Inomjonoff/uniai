@@ -27,6 +27,21 @@ async def init_database() -> None:
         await conn.run_sync(Base.metadata.create_all)
         logger.info("All database tables created or verified.")
 
+    # Fix any legacy enum column types on PostgreSQL to standard VARCHAR
+    if is_postgres:
+        enum_conversions = [
+            "ALTER TABLE knowledge DROP COLUMN IF EXISTS verification_status CASCADE;",
+            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS verification_status VARCHAR(50) DEFAULT 'unverified';",
+            "ALTER TABLE knowledge DROP COLUMN IF EXISTS trust_level CASCADE;",
+            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS trust_level VARCHAR(50) DEFAULT 'TELEGRAM_GROUP';"
+        ]
+        for stmt in enum_conversions:
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(text(stmt))
+            except Exception as e:
+                logger.debug(f"Enum conversion note: {e}")
+
     # Universal column migrations (works on both PostgreSQL and SQLite)
     migration_columns = [
         # table, column, type_and_default
@@ -87,7 +102,7 @@ async def init_database() -> None:
     ]
 
     for table, col, col_type in migration_columns:
-        stmt_str = f"ALTER TABLE {table} ADD COLUMN {col} {col_type};"
+        stmt_str = f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type};" if is_postgres else f"ALTER TABLE {table} ADD COLUMN {col} {col_type};"
         try:
             async with engine.begin() as conn:
                 await conn.execute(text(stmt_str))
