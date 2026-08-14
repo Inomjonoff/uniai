@@ -298,13 +298,8 @@ Eslatma:
             temperature=0.2
         )
 
-        header = "🤖 <b>AI Texnik Yordamchi</b> <i>(Baza ma'lumotlari asosida):</i>\n\n" if search_results else "🤖 <b>AI Texnik Yordamchi:</b>\n\n"
-        disclaimer = (
-            "\n\n──────────────\n"
-            "⚠️ <i>Eslatma: Ushbu javob texnik ma'lumotlar bazasi asosida AI tomonidan shakllantirildi. "
-            "Mas'uliyatli qarorlar yoki rasmiy buyruqlarda mas'ul mutaxassis / call-markaz (71 200 46 46) bilan aniqlashtirish tavsiya etiladi.</i>"
-        )
-        final_reply = f"{header}{reply.strip()}{disclaimer}"
+        disclaimer = "\n\n⚠️ <i>Eslatma: Ushbu javob AI tomonidan shakllantirildi</i>"
+        final_reply = f"{reply.strip()}{disclaimer}"
 
         response_payload["reply_text"] = final_reply
         await self.memory.add_message(conv.id, "user", user_text)
