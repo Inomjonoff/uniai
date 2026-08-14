@@ -138,6 +138,21 @@ async def trigger_seed_knowledge(request: Request):
     return {"status": "ok", "seeded_count": count}
 
 
+@app.post("/admin/clear")
+async def trigger_clear_knowledge(request: Request):
+    """Admin endpoint to completely clear knowledge base tables."""
+    from sqlalchemy import text
+    from app.db.session import async_session_factory
+    async with async_session_factory() as session:
+        await session.execute(text("DELETE FROM knowledge_embeddings;"))
+        await session.execute(text("DELETE FROM knowledge_sources;"))
+        await session.execute(text("DELETE FROM attachments;"))
+        await session.execute(text("DELETE FROM unresolved_queries;"))
+        await session.execute(text("DELETE FROM knowledge;"))
+        await session.commit()
+    return {"status": "ok", "message": "Knowledge base completely cleared."}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

@@ -241,3 +241,27 @@ async def cmd_seed_knowledge(message: Message):
     except Exception as e:
         logger.error(f"Error seeding knowledge: {e}", exc_info=True)
         await status_msg.edit_text(f"Xatolik yuz berdi: {e}")
+
+
+@admin_router.message(Command("clear_db"))
+@admin_router.message(Command("tozalash_bazani"))
+async def cmd_clear_knowledge(message: Message):
+    """Completely wipes all knowledge base tables."""
+    from sqlalchemy import text
+    status_msg = await message.answer("🧹 Bilimlar bazasi to'liq tozalanmoqda...")
+    try:
+        async with async_session_factory() as session:
+            await session.execute(text("DELETE FROM knowledge_embeddings;"))
+            await session.execute(text("DELETE FROM knowledge_sources;"))
+            await session.execute(text("DELETE FROM attachments;"))
+            await session.execute(text("DELETE FROM unresolved_queries;"))
+            await session.execute(text("DELETE FROM knowledge;"))
+            await session.commit()
+        await status_msg.edit_text(
+            "🧹 <b>Bilimlar bazasi 0 qilindi va to'liq tozalandi!</b>\n\n"
+            "Baza bo'sh holatga keltirildi. Endi faqat siz bergan qoida va ko'rsatmalar orqali bilimlar kiritiladi.",
+            reply_markup=get_main_reply_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"Error clearing knowledge: {e}", exc_info=True)
+        await status_msg.edit_text(f"Tozalashda xatolik: {e}")
