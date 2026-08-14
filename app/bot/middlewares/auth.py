@@ -23,8 +23,12 @@ class AuthMiddleware(BaseMiddleware):
         if not user:
             return await handler(event, data)
 
-        # Handle Private Chats
+        # Handle Private Chats (Direct 1-on-1)
         if isinstance(event, Message) and event.chat.type == ChatType.PRIVATE:
+            # If this is a business chat message, allow it through
+            if getattr(event, "business_connection_id", None):
+                return await handler(event, data)
+
             allowed_admins = settings.admin_ids_set
             # If ADMIN_USER_IDS is configured and current user is not in it
             if allowed_admins and user.id not in allowed_admins:
