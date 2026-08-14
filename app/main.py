@@ -75,12 +75,6 @@ async def lifespan(app: FastAPI):
     for t in list(_background_tasks):
         t.cancel()
 
-    if settings.webhook_url:
-        try:
-            await bot.delete_webhook()
-        except Exception:
-            pass
-
     await bot.session.close()
     await task_queue.shutdown()
     await engine.dispose()
