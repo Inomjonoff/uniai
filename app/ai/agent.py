@@ -295,10 +295,18 @@ Eslatma:
         reply = await self.client.generate_text(
             prompt=prompt,
             system_instruction=SYSTEM_ASSISTANT_PROMPT,
-            temperature=0.3
+            temperature=0.2
         )
 
-        response_payload["reply_text"] = reply
+        header = "🤖 <b>AI Texnik Yordamchi</b> <i>(Baza ma'lumotlari asosida):</i>\n\n" if search_results else "🤖 <b>AI Texnik Yordamchi:</b>\n\n"
+        disclaimer = (
+            "\n\n──────────────\n"
+            "⚠️ <i>Eslatma: Ushbu javob texnik ma'lumotlar bazasi asosida AI tomonidan shakllantirildi. "
+            "Mas'uliyatli qarorlar yoki rasmiy buyruqlarda mas'ul mutaxassis / call-markaz (71 200 46 46) bilan aniqlashtirish tavsiya etiladi.</i>"
+        )
+        final_reply = f"{header}{reply.strip()}{disclaimer}"
+
+        response_payload["reply_text"] = final_reply
         await self.memory.add_message(conv.id, "user", user_text)
-        await self.memory.add_message(conv.id, "assistant", reply, metadata_json={"sources": source_attributions})
+        await self.memory.add_message(conv.id, "assistant", final_reply, metadata_json={"sources": source_attributions})
         return response_payload
