@@ -15,6 +15,7 @@ from app.ai.file_processor import file_processor
 from app.ai.gemini_client import gemini_client
 from app.knowledge.repository import KnowledgeRepository
 from app.bot.keyboards.inline import get_confirmation_keyboard, get_feedback_keyboard
+from app.config import settings
 from app.utils.telegram_helpers import split_message_text
 from app.utils.logger import logger
 
