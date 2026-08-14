@@ -1,0 +1,54 @@
+services:
+  # Main Web Service (FastAPI + Telegram Webhook + Background Worker)
+  - type: web
+    name: unicon-ai-assistant
+    runtime: python
+    region: frankfurt
+    plan: starter
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: ENVIRONMENT
+        value: production
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ADMIN_USER_IDS
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: EMBEDDING_MODEL
+        value: text-embedding-004
+      - key: WEBHOOK_PATH
+        value: /webhook/telegram
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: unicon-ai-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: unicon-ai-redis
+          property: connectionString
+
+databases:
+  # Managed PostgreSQL with pgvector
+  - name: unicon-ai-db
+    region: frankfurt
+    plan: starter
+    databaseName: unicon_ai
+    user: unicon_admin
+    postgresMajorVersion: 16
+
+# Managed Redis instance (optional for high throughput, app has in-memory fallback)
+  - type: redis
+    name: unicon-ai-redis
+    region: frankfurt
+    plan: starter
+    ipAllowList: []
