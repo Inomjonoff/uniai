@@ -221,3 +221,23 @@ async def handle_direct_instruction_input(message: Message, state: FSMContext):
             await status_msg.edit_text(err_msg, reply_markup=get_main_reply_keyboard())
         except Exception:
             await message.answer(err_msg, reply_markup=get_main_reply_keyboard())
+
+
+@admin_router.message(Command("seed_knowledge"))
+@admin_router.message(Command("yangilash_bazani"))
+async def cmd_seed_knowledge(message: Message):
+    """Wipes and re-seeds knowledge base with official mahalla.ijro.uz, edo.ijro.uz, lawyer.ijro.uz knowledge."""
+    status_msg = await message.answer("🔄 Bilimlar bazasi tozalanmoqda va yangi rasmiy bilimlar yuklanmoqda...")
+    try:
+        from app.knowledge.seeder import seed_knowledge_base
+        count = await seed_knowledge_base(clear_existing=True)
+        await status_msg.edit_text(
+            f"✅ <b>Bilimlar bazasi muvaffaqiyatli yangilandi!</b>\n\n"
+            f"• <b>Jami yangi bilimlar:</b> {count} ta\n"
+            f"• <b>Tizimlar:</b> <code>mahalla.ijro.uz</code>, <code>edo.ijro.uz</code>, <code>lawyer.ijro.uz</code>, <code>E-IMZO / DSQ</code>\n\n"
+            "Endi ushbu tizimlar bo'yicha har qanday texnik muammoni bemalol so'rashingiz mumkin!",
+            reply_markup=get_main_reply_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"Error seeding knowledge: {e}", exc_info=True)
+        await status_msg.edit_text(f"Xatolik yuz berdi: {e}")

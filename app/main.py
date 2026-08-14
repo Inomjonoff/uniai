@@ -130,6 +130,14 @@ async def telegram_webhook(request: Request):
         return JSONResponse(content={"status": "ok", "error": str(e)})
 
 
+@app.post("/admin/seed")
+async def trigger_seed_knowledge(request: Request):
+    """Admin endpoint to wipe and re-seed knowledge base."""
+    from app.knowledge.seeder import seed_knowledge_base
+    count = await seed_knowledge_base(clear_existing=True)
+    return {"status": "ok", "seeded_count": count}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
