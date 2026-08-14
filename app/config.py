@@ -14,8 +14,8 @@ class Settings(BaseSettings):
 
     # Google Gemini AI Configuration
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
-    embedding_model: str = Field(default="text-embedding-004", alias="EMBEDDING_MODEL")
+    gemini_model: str = Field(default="gemini-3-flash-preview", alias="GEMINI_MODEL")
+    embedding_model: str = Field(default="gemini-embedding-001", alias="EMBEDDING_MODEL")
 
     # Database & Cache Configuration
     database_url: str = Field(

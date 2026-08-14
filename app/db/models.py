@@ -157,14 +157,14 @@ class KnowledgeEmbedding(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     knowledge_id = Column(Integer, ForeignKey("knowledge.id", ondelete="CASCADE"), nullable=False, index=True)
     
-    # Use Vector(768) if pgvector is installed, otherwise JSON
+    # Use Vector(3072) if pgvector is installed, otherwise JSON
     if PGVECTOR_AVAILABLE:
-        embedding = Column(Vector(768), nullable=True)
+        embedding = Column(Vector(3072), nullable=True)
     else:
         embedding = Column(JSON, nullable=True)
         
     embedding_json = Column(JSON, nullable=True)  # JSON fallback for raw vectors
-    model_name = Column(String(100), default="text-embedding-004", nullable=False)
+    model_name = Column(String(100), default="gemini-embedding-001", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     knowledge = relationship("Knowledge", back_populates="embeddings")
@@ -186,7 +186,7 @@ class Attachment(Base):
     detected_errors = Column(JSON, default=list, nullable=False)
     system_name = Column(String(100), nullable=True)
     if PGVECTOR_AVAILABLE:
-        embedding = Column(Vector(768), nullable=True)
+        embedding = Column(Vector(3072), nullable=True)
     else:
         embedding = Column(JSON, nullable=True)
     embedding_json = Column(JSON, nullable=True)
