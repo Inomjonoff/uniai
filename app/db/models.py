@@ -1,9 +1,9 @@
 """
-SQLAlchemy models for UNICON-SOFT AI Technical Assistant.
-Includes support for pgvector embeddings and full audit/source tracking.
+SQLAlchemy ORM Models for UNICON-SOFT AI Assistant.
 """
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+import enum
+from typing import Optional, List
 from sqlalchemy import (
     Column,
     Integer,
@@ -15,43 +15,33 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     JSON,
-    Index,
     Enum as SQLEnum,
+    Table
 )
 from sqlalchemy.orm import relationship
-import enum
 from app.db.session import Base
 
-try:
-    from pgvector.sqlalchemy import Vector
-    PGVECTOR_AVAILABLE = True
-except ImportError:
-    PGVECTOR_AVAILABLE = False
-    Vector = None
+
+class TrustLevel(int, enum.Enum):
+    USER = 3              # Direct instructions from user (Highest priority)
+    TELEGRAM_GROUP = 2    # Verified technical solutions from Telegram groups
+    FILE = 1              # External uploaded files / documents
 
 
 class SourceType(str, enum.Enum):
     USER = "USER"
+    USER_INSTRUCTION = "USER"
     TELEGRAM_GROUP = "TELEGRAM_GROUP"
-    TELEGRAM_PRIVATE = "TELEGRAM_PRIVATE"
+    SCREENSHOT = "SCREENSHOT"
     FILE = "FILE"
-    IMAGE = "IMAGE"
-    WEB = "WEB"
-    SYSTEM = "SYSTEM"
-
-
-class VerificationStatus(str, enum.Enum):
-    UNVERIFIED = "UNVERIFIED"
-    VERIFIED_BY_USER = "VERIFIED_BY_USER"
-    VERIFIED_BY_COMMUNITY = "VERIFIED_BY_COMMUNITY"
-    DEPRECATED = "DEPRECATED"
+    FILE_UPLOAD = "FILE"
 
 
 class JobStatus(str, enum.Enum):
-    PENDING = "PENDING"
-    PROCESSING = "PROCESSING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class User(Base):
@@ -59,12 +49,11 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
+    username = Column(String(100), nullable=True)
     full_name = Column(String(255), nullable=True)
-    username = Column(String(255), nullable=True)
     is_admin = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
 
@@ -75,13 +64,12 @@ class TelegramGroup(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     chat_id = Column(BigInteger, unique=True, nullable=False, index=True)
     title = Column(String(255), nullable=False)
-    username = Column(String(255), nullable=True)
+    username = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
     learning_enabled = Column(Boolean, default=True, nullable=False)
-    reply_enabled = Column(Boolean, default=False, nullable=False)
-    status = Column(String(50), default="active", nullable=False)
-    last_processed_message_id = Column(BigInteger, default=0, nullable=False)
+    reply_enabled = Column(Boolean, default=False, nullable=False)  # Silent listener by default
+    last_sync_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     messages = relationship("TelegramMessage", back_populates="group", cascade="all, delete-orphan")
 
@@ -90,46 +78,52 @@ class TelegramMessage(Base):
     __tablename__ = "telegram_messages"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    message_id = Column(BigInteger, nullable=False)
+    message_id = Column(BigInteger, nullable=False, index=True)
     chat_id = Column(BigInteger, ForeignKey("telegram_groups.chat_id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(BigInteger, nullable=True)
     sender_name = Column(String(255), nullable=True)
-    username = Column(String(255), nullable=True)
+    username = Column(String(100), nullable=True)
     text = Column(Text, nullable=True)
-    media_type = Column(String(50), nullable=True)  # text, photo, document, voice
+    media_type = Column(String(50), default="text", nullable=False)  # text, photo, document, voice
     file_id = Column(String(255), nullable=True)
     reply_to_message_id = Column(BigInteger, nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     is_processed = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     group = relationship("TelegramGroup", back_populates="messages")
 
-    __table_args__ = (
-        Index("ix_chat_message", "chat_id", "message_id", unique=True),
-    )
+
+class VerificationStatus(str, enum.Enum):
+    VERIFIED_BY_USER = "verified_by_user"
+    UNVERIFIED = "unverified"
 
 
 class Knowledge(Base):
     __tablename__ = "knowledge"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    title = Column(String(500), nullable=True)
+    title = Column(String(500), nullable=False)
     problem = Column(Text, nullable=True)
     possible_cause = Column(Text, nullable=True)
-    solution = Column(Text, nullable=True)
-    raw_content = Column(Text, nullable=False)
+    solution = Column(Text, nullable=False)
+    raw_content = Column(Text, nullable=True)
     category = Column(String(100), default="general", nullable=False, index=True)
-    tags = Column(JSON, default=list, nullable=False)
-    confidence = Column(Float, default=1.0, nullable=False)  # 0.0 to 1.0
-    trust_score = Column(Float, default=1.0, nullable=False)  # USER = 1.0, Group = 0.8, Web = 0.5
+    system_name = Column(String(100), nullable=True, index=True)
+    trust_level = Column(SQLEnum(TrustLevel), default=TrustLevel.TELEGRAM_GROUP, nullable=False, index=True)
+    confidence = Column(Float, default=1.0, nullable=False)
+    confidence_score = Column(Float, default=1.0, nullable=False)
+    trust_score = Column(Float, default=0.8, nullable=False)
+    verified_by_user = Column(Boolean, default=False, nullable=False)
     verification_status = Column(SQLEnum(VerificationStatus), default=VerificationStatus.UNVERIFIED, nullable=False)
-    is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    tags = Column(JSON, default=list, nullable=False)
+    tags_list = Column(JSON, default=list, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    sources = relationship("KnowledgeSource", back_populates="knowledge", cascade="all, delete-orphan")
     embeddings = relationship("KnowledgeEmbedding", back_populates="knowledge", cascade="all, delete-orphan")
+    sources = relationship("KnowledgeSource", back_populates="knowledge", cascade="all, delete-orphan")
     attachments = relationship("Attachment", back_populates="knowledge", cascade="all, delete-orphan")
     feedbacks = relationship("Feedback", back_populates="knowledge", cascade="all, delete-orphan")
 
@@ -139,12 +133,16 @@ class KnowledgeSource(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     knowledge_id = Column(Integer, ForeignKey("knowledge.id", ondelete="CASCADE"), nullable=False, index=True)
-    source_type = Column(SQLEnum(SourceType), default=SourceType.USER, nullable=False, index=True)
-    source_id = Column(String(255), nullable=True)  # Chat ID, User ID, or File Path
+    source_type = Column(SQLEnum(SourceType), nullable=False)
+    source_id = Column(String(255), nullable=True)
     source_message_id = Column(BigInteger, nullable=True)
-    source_group_name = Column(String(255), nullable=True)
+    chat_id = Column(BigInteger, nullable=True)
+    message_id = Column(BigInteger, nullable=True)
     author = Column(String(255), nullable=True)
-    url = Column(String(1000), nullable=True)
+    author_name = Column(String(255), nullable=True)
+    source_group_name = Column(String(255), nullable=True)
+    group_title = Column(String(255), nullable=True)
+    message_link = Column(String(500), nullable=True)
     metadata_json = Column(JSON, default=dict, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -191,7 +189,7 @@ class Conversation(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_user_id = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"), nullable=False, index=True)
-    title = Column(String(255), default="Active Chat", nullable=False)
+    title = Column(String(255), default="New Session", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -250,3 +248,22 @@ class ProcessingJob(Base):
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class UnresolvedQuery(Base):
+    """
+    Tracks questions, technical issues, or requests that the AI did not know or could not answer.
+    Presented as interactive buttons to the admin for manual teaching and knowledge ingestion.
+    """
+    __tablename__ = "unresolved_queries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    query_text = Column(Text, nullable=False)
+    context = Column(Text, nullable=True)
+    chat_id = Column(BigInteger, nullable=True)
+    user_id = Column(BigInteger, nullable=True)
+    sender_name = Column(String(255), nullable=True)
+    status = Column(String(50), default="pending", nullable=False, index=True)  # pending, learned, dismissed
+    admin_solution = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)

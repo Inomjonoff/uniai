@@ -1,18 +1,20 @@
 """
 Inline Keyboards for Telegram Bot.
+Includes Group Management, Recent Requests, and Unresolved Knowledge Learning Queue.
 """
 from typing import List, Optional
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from app.db.models import TelegramGroup
+from app.db.models import TelegramGroup, UnresolvedQuery, TelegramMessage
 
 
 def get_settings_keyboard(
     groups_count: int,
     knowledge_count: int,
+    pending_learn_count: int = 0,
     auto_learning: bool = True,
     screenshot_analysis: bool = True
 ) -> InlineKeyboardMarkup:
-    """Builds interactive main settings keyboard."""
+    """Builds interactive main settings and management dashboard keyboard."""
     learn_icon = "🟢 ON" if auto_learning else "🔴 OFF"
     vision_icon = "🟢 ON" if screenshot_analysis else "🔴 OFF"
 
@@ -22,7 +24,11 @@ def get_settings_keyboard(
             InlineKeyboardButton(text=f"Screenshot Vision: {vision_icon}", callback_data="toggle:screenshot_analysis")
         ],
         [
-            InlineKeyboardButton(text=f"👥 Guruhlar ({groups_count})", callback_data="menu:groups"),
+            InlineKeyboardButton(text=f"👥 Guruhlarni boshqarish ({groups_count})", callback_data="menu:groups"),
+            InlineKeyboardButton(text=f"📨 Oxirgi murojaatlar", callback_data="menu:recent_messages")
+        ],
+        [
+            InlineKeyboardButton(text=f"🎓 O'rganish kerak ({pending_learn_count})", callback_data="menu:unresolved_queue"),
             InlineKeyboardButton(text=f"📚 Bilimlar ({knowledge_count:,})", callback_data="menu:knowledge_stats")
         ],
         [
@@ -33,8 +39,54 @@ def get_settings_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+def get_unresolved_list_keyboard(items: List[UnresolvedQuery]) -> InlineKeyboardMarkup:
+    """Renders unresolved knowledge items as interactive buttons."""
+    keyboard = []
+    for item in items:
+        title = item.query_text.strip().replace("\n", " ")
+        if len(title) > 30:
+            title = title[:27] + "..."
+        btn_text = f"❓ {title}"
+        keyboard.append([InlineKeyboardButton(text=btn_text, callback_data=f"unresolved_view:{item.id}")])
+
+    if not items:
+        keyboard.append([InlineKeyboardButton(text="✅ Hamma savollarga yechim topilgan", callback_data="menu:refresh_settings")])
+
+    keyboard.append([InlineKeyboardButton(text="⬅️ Bosh menyuga qaytish", callback_data="menu:refresh_settings")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_unresolved_detail_keyboard(query_id: int) -> InlineKeyboardMarkup:
+    """Actions keyboard for a specific unresolved knowledge item."""
+    keyboard = [
+        [
+            InlineKeyboardButton(text="✍️ Yechim kiritish (O'rgatish)", callback_data=f"unresolved_teach:{query_id}"),
+            InlineKeyboardButton(text="🗑 Keraksiz / O'chirish", callback_data=f"unresolved_dismiss:{query_id}")
+        ],
+        [
+            InlineKeyboardButton(text="⬅️ Ro'yxatga qaytish", callback_data="menu:unresolved_queue")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_recent_messages_keyboard(messages: List[TelegramMessage]) -> InlineKeyboardMarkup:
+    """Renders recent incoming messages from groups/chats."""
+    keyboard = []
+    for msg in messages[:8]:
+        text_preview = (msg.text or msg.media_type or "Fayl").strip().replace("\n", " ")
+        if len(text_preview) > 25:
+            text_preview = text_preview[:22] + "..."
+        sender = (msg.sender_name or "Foydalanuvchi").split()[0]
+        btn_text = f"💬 {sender}: {text_preview}"
+        keyboard.append([InlineKeyboardButton(text=btn_text, callback_data=f"msg_view:{msg.id}")])
+
+    keyboard.append([InlineKeyboardButton(text="⬅️ Bosh menyuga qaytish", callback_data="menu:refresh_settings")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
 def get_group_item_keyboard(groups: List[TelegramGroup]) -> InlineKeyboardMarkup:
-    """Builds keyboard listing all active groups."""
+    """Builds keyboard listing all monitored groups."""
     keyboard = []
     for g in groups:
         l_status = "🟢" if g.learning_enabled else "🔴"
@@ -53,8 +105,8 @@ def get_group_settings_keyboard(
     reply_on: bool
 ) -> InlineKeyboardMarkup:
     """Settings keyboard for a specific group."""
-    l_text = "🟢 Learning: ON" if learning_on else "🔴 Learning: OFF"
-    r_text = "🟢 Reply: ON" if reply_on else "🔴 Reply: OFF (Jim turadi)"
+    l_text = "🟢 O'rganish: ON" if learning_on else "🔴 O'rganish: OFF"
+    r_text = "🟢 Javob berish: ON" if reply_on else "🔴 Javob berish: OFF (Jim turadi)"
 
     keyboard = [
         [InlineKeyboardButton(text=l_text, callback_data=f"grp_toggle_learn:{chat_id}")],

@@ -15,9 +15,11 @@ from app.db.models import (
     TelegramGroup,
     TelegramMessage,
     SourceType,
+    TrustLevel,
     VerificationStatus,
     User,
-    Feedback
+    Feedback,
+    UnresolvedQuery
 )
 from app.utils.logger import logger
 
@@ -304,3 +306,118 @@ class KnowledgeRepository:
         res = await self.session.execute(stmt)
         await self.session.commit()
         return res.rowcount or 0
+
+    async def save_unresolved_query(
+        self,
+        query_text: str,
+        context: Optional[str] = None,
+        chat_id: Optional[int] = None,
+        user_id: Optional[int] = None,
+        sender_name: Optional[str] = None
+    ) -> UnresolvedQuery:
+        """Saves a question/issue that AI could not answer or needs learning."""
+        unresolved = UnresolvedQuery(
+            query_text=query_text,
+            context=context,
+            chat_id=chat_id,
+            user_id=user_id,
+            sender_name=sender_name,
+            status="pending"
+        )
+        self.session.add(unresolved)
+        await self.session.commit()
+        await self.session.refresh(unresolved)
+        return unresolved
+
+    async def get_pending_unresolved_queries(self, limit: int = 20) -> List[UnresolvedQuery]:
+        """Gets all unresolved topics waiting for admin review/teaching."""
+        stmt = (
+            select(UnresolvedQuery)
+            .where(UnresolvedQuery.status == "pending")
+            .order_by(UnresolvedQuery.created_at.desc())
+            .limit(limit)
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+    async def get_unresolved_query_by_id(self, query_id: int) -> Optional[UnresolvedQuery]:
+        """Gets a single unresolved query by ID."""
+        stmt = select(UnresolvedQuery).where(UnresolvedQuery.id == query_id)
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
+
+    async def resolve_unresolved_query(
+        self,
+        query_id: int,
+        solution: str,
+        admin_id: int,
+        embedding: Optional[List[float]] = None
+    ) -> Optional[Knowledge]:
+        """Marks unresolved query as learned and saves solution into Knowledge base."""
+        unresolved = await self.get_unresolved_query_by_id(query_id)
+        if not unresolved:
+            return None
+
+        unresolved.status = "learned"
+        unresolved.admin_solution = solution
+        unresolved.resolved_at = datetime.utcnow()
+
+        # Save to Knowledge Base
+        knowledge = Knowledge(
+            title=unresolved.query_text[:100],
+            problem=unresolved.query_text,
+            possible_cause=unresolved.context,
+            solution=solution,
+            raw_content=f"Savol: {unresolved.query_text}\nYechim: {solution}",
+            category="admin_taught",
+            tags=["manual_learning", "unresolved_fix"],
+            confidence=1.0,
+            trust_score=1.0,
+            verification_status="verified_by_user",
+            is_deleted=False
+        )
+        self.session.add(knowledge)
+        await self.session.flush()
+
+        source = KnowledgeSource(
+            knowledge_id=knowledge.id,
+            source_type=SourceType.USER,
+            source_id=str(admin_id),
+            author=f"Admin {admin_id}",
+            metadata_json={"source": "unresolved_query_resolution", "query_id": query_id}
+        )
+        self.session.add(source)
+
+        if embedding:
+            emb_record = KnowledgeEmbedding(
+                knowledge_id=knowledge.id,
+                embedding=embedding,
+                embedding_json=embedding,
+                model_name="gemini-embedding-001"
+            )
+            self.session.add(emb_record)
+
+        await self.session.commit()
+        await self.session.refresh(knowledge)
+        return knowledge
+
+    async def dismiss_unresolved_query(self, query_id: int) -> bool:
+        """Dismisses an unresolved query as not relevant."""
+        unresolved = await self.get_unresolved_query_by_id(query_id)
+        if not unresolved:
+            return False
+        unresolved.status = "dismissed"
+        unresolved.resolved_at = datetime.utcnow()
+        await self.session.commit()
+        return True
+
+    async def get_recent_messages(self, limit: int = 15) -> List[TelegramMessage]:
+        """Gets recent messages across all groups for activity monitoring."""
+        stmt = (
+            select(TelegramMessage)
+            .options(selectinload(TelegramMessage.group))
+            .order_by(TelegramMessage.created_at.desc())
+            .limit(limit)
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())

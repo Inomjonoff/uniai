@@ -15,13 +15,14 @@ from app.db.models import (
     TelegramMessage,
     TelegramGroup,
     Attachment,
-    SourceType,
-    PGVECTOR_AVAILABLE
+    SourceType
 )
 from app.knowledge.deduplication import cosine_similarity
 from app.ai.gemini_client import gemini_client
 from app.config import settings
 from app.utils.logger import logger
+
+PGVECTOR_AVAILABLE = False
 
 
 class HybridSearchEngine:

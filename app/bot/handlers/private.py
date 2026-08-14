@@ -142,6 +142,51 @@ async def handle_document(message: Message, bot: Bot):
         await status_msg.edit_text(f"Faylni o'rganishda xatolik bo'ldi: {str(e)}")
 
 
+from aiogram.fsm.context import FSMContext
+from app.bot.handlers.callbacks import TeachKnowledgeState
+
+
+@private_router.message(TeachKnowledgeState.waiting_for_solution, F.text)
+async def handle_teach_solution_input(message: Message, state: FSMContext, bot: Bot):
+    """Receives admin's manual solution for an unresolved knowledge item."""
+    data = await state.get_data()
+    query_id = data.get("query_id")
+    query_text = data.get("query_text", "")
+    solution_text = message.text.strip()
+
+    status_msg = await message.answer("Yechim saqlanmoqda va o'rganilmoqda...")
+
+    try:
+        emb = await gemini_client.generate_embedding(f"{query_text} {solution_text}")
+        async with async_session_factory() as session:
+            repo = KnowledgeRepository(session)
+            await repo.resolve_unresolved_query(
+                query_id=query_id,
+                solution=solution_text,
+                admin_id=message.from_user.id,
+                embedding=emb
+            )
+
+        await state.clear()
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎓 O'rganish navbatiga qaytish", callback_data="menu:unresolved_queue")],
+            [InlineKeyboardButton(text="⚙️ Boshqaruv menyusi", callback_data="menu:refresh_settings")]
+        ])
+
+        success_text = (
+            "✅ <b>Bilim muvaffaqiyatli o'rganildi va bazaga qo'shildi!</b>\n\n"
+            f"• <b>Savol/Muammo:</b> <i>{query_text}</i>\n"
+            f"• <b>Yechim:</b> <i>{solution_text}</i>\n\n"
+            "Endi bot guruhlarda va shaxsiy chatda ushbu savol berilganda aynan shu yechimni taqdim etadi."
+        )
+        await status_msg.edit_text(success_text, reply_markup=kb)
+    except Exception as e:
+        logger.error(f"Error saving taught knowledge: {e}", exc_info=True)
+        await status_msg.edit_text(f"Xatolik yuz berdi: {e}")
+
+
 @private_router.message(F.text)
 async def handle_private_text(message: Message, bot: Bot):
     """Processes natural language user requests in private chat."""
@@ -150,7 +195,7 @@ async def handle_private_text(message: Message, bot: Bot):
         return
 
     # Check for settings trigger word
-    if user_text.lower() in ("sozlamalar", "settings", "sozlama"):
+    if user_text.lower() in ("sozlamalar", "settings", "sozlama", "boshqaruv", "panel"):
         from app.bot.handlers.admin import show_settings_menu
         await show_settings_menu(message)
         return

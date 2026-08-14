@@ -245,6 +245,20 @@ class AssistantAgent:
 
         rag_context_text = "\n\n".join(context_snippets) if context_snippets else "Bazada to'g'ridan-to'g'ri o'xshash ma'lumot topilmadi."
 
+        # If no knowledge was found and user asks a technical question, record in unresolved learning queue
+        if not search_results and len(user_text.split()) >= 2:
+            tech_indicators = ["?", "nima", "qanday", "xato", "50", "40", "muammo", "ishlamayapti", "server", "api", "db", "postgres", "redis"]
+            if any(w in user_text.lower() for w in tech_indicators):
+                try:
+                    await self.repo.save_unresolved_query(
+                        query_text=user_text,
+                        context="Bazada to'g'ridan-to'g'ri javob topilmadi",
+                        user_id=telegram_user_id,
+                        sender_name=sender_name
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to record unresolved query: {e}")
+
         # Format conversation history string
         history_formatted = ""
         for h in history[-6:]:
