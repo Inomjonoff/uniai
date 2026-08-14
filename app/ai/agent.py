@@ -31,9 +31,19 @@ class AssistantAgent:
         """Classifies the natural language intent of the user."""
         text_lower = user_text.lower().strip()
 
-        # Fast heuristic checks for common Uzbek conversational commands
-        if text_lower.startswith(("eslab qol", "yodda tut", "buni eslab qol", "buni saqla", "saqlab qo'y")):
-            clean_instruction = re.sub(r"^(eslab qol:?|yodda tut:?|buni eslab qol:?|buni saqla:?|saqlab qo'y:?)\s*", "", user_text, flags=re.IGNORECASE).strip()
+        # Fast heuristic checks for common Uzbek conversational commands and task assignments
+        instruction_prefixes = (
+            "eslab qol", "yodda tut", "buni eslab qol", "buni saqla", "saqlab qo'y",
+            "topshiriq", "vazifa", "ko'rsatma", "korsatma", "qoida", "yangi qoida",
+            "o'rgan", "organ", "bilib ol", "buni bilib ol", "buyruq"
+        )
+        if text_lower.startswith(instruction_prefixes):
+            clean_instruction = re.sub(
+                r"^(eslab qol:?|yodda tut:?|buni eslab qol:?|buni saqla:?|saqlab qo'y:?|topshiriq:?|vazifa:?|ko'rsatma:?|korsatma:?|qoida:?|yangi qoida:?|o'rgan:?|organ:?|bilib ol:?|buni bilib ol:?|buyruq:?)\s*",
+                "",
+                user_text,
+                flags=re.IGNORECASE
+            ).strip()
             return {
                 "intent": "SAVE_INSTRUCTION",
                 "instruction_text": clean_instruction or user_text,
@@ -126,7 +136,11 @@ class AssistantAgent:
                 sender_name=sender_name,
                 embedding=emb
             )
-            reply = "Xo'p, eslab qoldim."
+            reply = (
+                f"✅ <b>Topshiriq / Qoida eslab qolindi!</b>\n\n"
+                f"📌 <i>“{instruction}”</i>\n\n"
+                f"Endi guruhlarda yoki shaxsiy chatlarda shu mavzuda savol bo'lsa, aynan siz bergan ko'rsatma bo'yicha javob beraman."
+            )
             response_payload["reply_text"] = reply
             await self.memory.add_message(conv.id, "user", user_text)
             await self.memory.add_message(conv.id, "assistant", reply)

@@ -74,7 +74,7 @@ async def test_save_instruction_flow(test_session, mock_gemini_client):
         sender_name="Senior Engineer"
     )
 
-    assert result["reply_text"] == "Xo'p, eslab qoldim."
+    assert "Topshiriq / Qoida eslab qolindi" in result["reply_text"]
 
     # Check knowledge base
     from sqlalchemy import select

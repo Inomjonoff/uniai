@@ -15,6 +15,7 @@ from app.ai.file_processor import file_processor
 from app.ai.gemini_client import gemini_client
 from app.knowledge.repository import KnowledgeRepository
 from app.bot.keyboards.inline import get_confirmation_keyboard, get_feedback_keyboard
+from app.bot.keyboards.reply import get_main_reply_keyboard
 from app.config import settings
 from app.utils.telegram_helpers import split_message_text
 from app.utils.logger import logger
@@ -31,10 +32,10 @@ async def cmd_start(message: Message):
         f"Assalomu alaykum, {message.from_user.first_name}!\n\n"
         "Men UNICON-SOFT texnik yordamchisiman. Siz bilan oddiy muloqot qilaman, "
         "texnik guruhlardan va ko'rsatmalaringizdan o'rganib boraman.\n\n"
-        "Menga bemalol savol berishingiz, screenshot yoki fayl yuborishingiz, "
-        "yoki biror qoidani “Eslab qol: ...” deb o'rgatishingiz mumkin."
+        "Menga bemalol savol berishingiz, topshiriq yuklashingiz, screenshot yoki fayl yuborishingiz, "
+        "yoki biror qoidani “Eslab qol: ...” yoki “Topshiriq: ...” deb o'rgatishingiz mumkin."
     )
-    await message.answer(welcome_text)
+    await message.answer(welcome_text, reply_markup=get_main_reply_keyboard())
 
 
 @private_router.message(Command("help"))
@@ -43,14 +44,14 @@ async def cmd_help(message: Message):
     help_text = (
         "Qanday foydalanish mumkin?\n\n"
         "• Oddiy savol bering (masalan: <i>502 chiqyapti, nima qilay?</i>)\n"
-        "• Biror qoidani o'rgating (masalan: <i>Eslab qol: Ijro.gov.uzda 502 chiqsa API servisni tekshiramiz</i>)\n"
+        "• Topshiriq / Qoida bering (masalan: <i>Topshiriq: Ijro.gov.uzda 502 chiqsa API servisni tekshiramiz</i>)\n"
         "• Guruhdagi muhokamalarni so'rang (masalan: <i>Kecha guruhda server xatosi haqida nima deyishgandi?</i>)\n"
         "• Original xabarni so'rang (masalan: <i>O'sha xabarni tashlab ber</i>)\n"
         "• Screenshot yuboring — xatolikni tahlil qilib beraman\n"
         "• Fayl yuboring — o'rganib bazaga qo'shaman\n"
         "• /settings — guruhlar va tizim sozlamalari"
     )
-    await message.answer(help_text)
+    await message.answer(help_text, reply_markup=get_main_reply_keyboard())
 
 
 @private_router.message(F.photo)
