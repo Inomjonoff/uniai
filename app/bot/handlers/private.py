@@ -3,7 +3,7 @@ Private chat message handlers for UNICON-SOFT AI Technical Assistant.
 Handles natural dialogues, screenshots, file ingestion, and direct commands.
 """
 from aiogram import Router, F, Bot
-from aiogram.types import Message
+from aiogram.types import Message, BusinessConnection
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ChatType
 import io
@@ -202,3 +202,33 @@ async def handle_private_text(message: Message, bot: Bot):
         chunks = split_message_text(reply_text)
         for chunk in chunks:
             await message.answer(chunk)
+
+
+@private_router.business_connection()
+async def handle_business_connection(connection: BusinessConnection):
+    """Handles Telegram Business account secretary mode connection updates."""
+    logger.info(f"Telegram Business Connection update: user={connection.user.id}, can_reply={connection.can_reply}, is_enabled={connection.is_enabled}")
+
+
+@private_router.business_message()
+async def handle_business_message(message: Message, bot: Bot):
+    """Handles messages received when bot operates as Secretary/Chatbot in Telegram Business."""
+    user_text = message.text or message.caption or ""
+    if not user_text:
+        return
+
+    async with async_session_factory() as session:
+        agent = AssistantAgent(session=session)
+        sender_name = message.from_user.full_name if message.from_user else "User"
+        
+        result = await agent.process_user_message(
+            telegram_user_id=message.from_user.id if message.from_user else 0,
+            user_text=user_text,
+            sender_name=sender_name
+        )
+
+    reply_text = result.get("reply_text", "")
+    if reply_text:
+        chunks = split_message_text(reply_text)
+        for chunk in chunks:
+            await message.reply(chunk)

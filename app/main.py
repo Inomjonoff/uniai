@@ -47,6 +47,15 @@ async def lifespan(app: FastAPI):
     dp.callback_query.middleware(AuthMiddleware())
     dp.include_router(main_router)
 
+    ALLOWED_UPDATES = [
+        "message",
+        "edited_message",
+        "callback_query",
+        "business_connection",
+        "business_message",
+        "edited_business_message"
+    ]
+
     # 5. Configure Webhook or Polling mode
     if settings.webhook_url and settings.full_webhook_url:
         logger.info(f"Setting Telegram Webhook to: {settings.full_webhook_url}")
@@ -55,15 +64,15 @@ async def lifespan(app: FastAPI):
                 url=settings.full_webhook_url,
                 secret_token=settings.webhook_secret,
                 drop_pending_updates=False,
-                allowed_updates=["message", "edited_message", "callback_query"]
+                allowed_updates=ALLOWED_UPDATES
             )
-            logger.info("Telegram Webhook set successfully.")
+            logger.info("Telegram Webhook set successfully with Business Mode support.")
         except Exception as e:
             logger.error(f"Failed to set Telegram Webhook: {e}", exc_info=True)
     else:
         logger.info("WEBHOOK_URL is not set. Starting Telegram Long Polling mode...")
         polling_task = asyncio.create_task(
-            dp.start_polling(bot, allowed_updates=["message", "edited_message", "callback_query"])
+            dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES)
         )
         _background_tasks.add(polling_task)
         polling_task.add_done_callback(_background_tasks.discard)
