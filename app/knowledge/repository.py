@@ -46,7 +46,7 @@ class KnowledgeRepository:
             tags=["user_rule", "instruction"],
             confidence=1.0,
             trust_score=1.0,
-            verification_status=VerificationStatus.VERIFIED_BY_USER,
+            verified_by_user=True,
             is_deleted=False
         )
         self.session.add(knowledge)
@@ -92,7 +92,7 @@ class KnowledgeRepository:
             tags=item.get("tags", []),
             confidence=float(item.get("confidence", 0.85)),
             trust_score=0.85,
-            verification_status=VerificationStatus.UNVERIFIED,
+            verified_by_user=False,
             is_deleted=False
         )
         self.session.add(knowledge)
@@ -373,7 +373,7 @@ class KnowledgeRepository:
             tags=["manual_learning", "unresolved_fix"],
             confidence=1.0,
             trust_score=1.0,
-            verification_status="verified_by_user",
+            verified_by_user=True,
             is_deleted=False
         )
         self.session.add(knowledge)
