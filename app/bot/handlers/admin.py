@@ -201,12 +201,23 @@ async def handle_direct_instruction_input(message: Message, state: FSMContext):
             )
 
         await state.clear()
+        import html
+        escaped_instruction = html.escape(instruction_text)
         success_text = (
             f"✅ <b>Topshiriq muvaffaqiyatli eslab qolindi!</b>\n\n"
-            f"📌 <b>Qoida:</b> <i>“{instruction_text}”</i>\n\n"
+            f"📌 <b>Qoida:</b> <i>“{escaped_instruction}”</i>\n\n"
             f"Endi chatlarda yoki guruhlarda shu mavzuda savol berilsa, aynan siz bergan ushbu ko'rsatma bo'yicha javob qaytaraman."
         )
-        await status_msg.edit_text(success_text)
+        try:
+            await status_msg.edit_text(success_text, reply_markup=get_main_reply_keyboard())
+        except Exception:
+            await message.answer(success_text, reply_markup=get_main_reply_keyboard())
     except Exception as e:
+        logger.error(f"Error saving direct instruction: {e}", exc_info=True)
         await state.clear()
-        await status_msg.edit_text(f"Topshiriqni saqlashda xatolik bo'ldi: {e}")
+        import html
+        err_msg = f"Topshiriqni saqlashda xatolik bo'ldi: {html.escape(str(e))}"
+        try:
+            await status_msg.edit_text(err_msg, reply_markup=get_main_reply_keyboard())
+        except Exception:
+            await message.answer(err_msg, reply_markup=get_main_reply_keyboard())

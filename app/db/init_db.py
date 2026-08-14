@@ -1,6 +1,6 @@
 """
 Database initialization and comprehensive migration helpers.
-Ensures pgvector extension, schemas, and all columns are created automatically on startup.
+Ensures pgvector extension, schemas, and all columns are created/migrated automatically on startup for both SQLite and PostgreSQL.
 """
 from sqlalchemy import text
 from app.db.session import engine, Base, async_session_factory
@@ -13,8 +13,10 @@ async def init_database() -> None:
     """Initializes pgvector extension and creates/migrates all database tables."""
     logger.info("Initializing database schema and extensions...")
     
+    is_postgres = "postgresql" in settings.database_url
+
     async with engine.begin() as conn:
-        if "postgresql" in settings.database_url:
+        if is_postgres:
             try:
                 logger.info("Enabling pgvector extension (CREATE EXTENSION IF NOT EXISTS vector)...")
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
@@ -25,93 +27,75 @@ async def init_database() -> None:
         await conn.run_sync(Base.metadata.create_all)
         logger.info("All database tables created or verified.")
 
-    # Migrate existing PostgreSQL tables with newly added columns (one by one in isolated transactions)
-    if "postgresql" in settings.database_url:
-        migration_statements = [
-            # 1. knowledge
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS system_name VARCHAR(100);",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS problem TEXT;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS possible_cause TEXT;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS raw_content TEXT;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT 'general';",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS confidence FLOAT DEFAULT 1.0;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS confidence_score FLOAT DEFAULT 1.0;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS trust_score FLOAT DEFAULT 0.8;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS verified_by_user BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS tags JSON DEFAULT '[]'::json;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS tags_list JSON DEFAULT '[]'::json;",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();",
-            "ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();",
+    # Universal column migrations (works on both PostgreSQL and SQLite)
+    migration_columns = [
+        # table, column, type_and_default
+        ("knowledge", "system_name", "VARCHAR(100)"),
+        ("knowledge", "problem", "TEXT"),
+        ("knowledge", "possible_cause", "TEXT"),
+        ("knowledge", "raw_content", "TEXT"),
+        ("knowledge", "category", "VARCHAR(100) DEFAULT 'general'"),
+        ("knowledge", "confidence", "FLOAT DEFAULT 1.0"),
+        ("knowledge", "confidence_score", "FLOAT DEFAULT 1.0"),
+        ("knowledge", "trust_score", "FLOAT DEFAULT 0.8"),
+        ("knowledge", "trust_level", "VARCHAR(50) DEFAULT 'TELEGRAM_GROUP'"),
+        ("knowledge", "verified_by_user", "BOOLEAN DEFAULT FALSE"),
+        ("knowledge", "verification_status", "VARCHAR(50) DEFAULT 'unverified'"),
+        ("knowledge", "is_active", "BOOLEAN DEFAULT TRUE"),
+        ("knowledge", "is_deleted", "BOOLEAN DEFAULT FALSE"),
+        ("knowledge", "tags", "JSON DEFAULT '[]'"),
+        ("knowledge", "tags_list", "JSON DEFAULT '[]'"),
+        ("knowledge", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("knowledge", "updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("knowledge_sources", "source_id", "VARCHAR(255)"),
+        ("knowledge_sources", "source_message_id", "BIGINT"),
+        ("knowledge_sources", "chat_id", "BIGINT"),
+        ("knowledge_sources", "message_id", "BIGINT"),
+        ("knowledge_sources", "author", "VARCHAR(255)"),
+        ("knowledge_sources", "author_name", "VARCHAR(255)"),
+        ("knowledge_sources", "source_group_name", "VARCHAR(255)"),
+        ("knowledge_sources", "group_title", "VARCHAR(255)"),
+        ("knowledge_sources", "message_link", "VARCHAR(500)"),
+        ("knowledge_sources", "metadata_json", "JSON DEFAULT '{}'"),
+        ("knowledge_sources", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("knowledge_embeddings", "embedding", "JSON"),
+        ("knowledge_embeddings", "embedding_json", "JSON"),
+        ("knowledge_embeddings", "model_name", "VARCHAR(100) DEFAULT 'gemini-embedding-001'"),
+        ("knowledge_embeddings", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("users", "username", "VARCHAR(100)"),
+        ("users", "full_name", "VARCHAR(255)"),
+        ("users", "is_admin", "BOOLEAN DEFAULT FALSE"),
+        ("users", "is_active", "BOOLEAN DEFAULT TRUE"),
+        ("users", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("users", "updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("telegram_groups", "username", "VARCHAR(100)"),
+        ("telegram_groups", "is_active", "BOOLEAN DEFAULT TRUE"),
+        ("telegram_groups", "reply_enabled", "BOOLEAN DEFAULT FALSE"),
+        ("telegram_groups", "learning_enabled", "BOOLEAN DEFAULT TRUE"),
+        ("telegram_groups", "last_sync_at", "TIMESTAMP"),
+        ("telegram_groups", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("telegram_messages", "user_id", "BIGINT"),
+        ("telegram_messages", "sender_name", "VARCHAR(255)"),
+        ("telegram_messages", "username", "VARCHAR(100)"),
+        ("telegram_messages", "text", "TEXT"),
+        ("telegram_messages", "media_type", "VARCHAR(50) DEFAULT 'text'"),
+        ("telegram_messages", "file_id", "VARCHAR(255)"),
+        ("telegram_messages", "reply_to_message_id", "BIGINT"),
+        ("telegram_messages", "is_processed", "BOOLEAN DEFAULT FALSE"),
+        ("telegram_messages", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("unresolved_queries", "admin_solution", "TEXT")
+    ]
 
-            # 2. knowledge_sources
-            "ALTER TABLE knowledge_sources ADD COLUMN IF NOT EXISTS source_id VARCHAR(255);",
-            "ALTER TABLE knowledge_sources ADD COLUMN IF NOT EXISTS source_message_id BIGINT;",
-            "ALTER TABLE knowledge_sources ADD COLUMN IF NOT EXISTS author VARCHAR(255);",
-            "ALTER TABLE knowledge_sources ADD COLUMN IF NOT EXISTS author_name VARCHAR(255);",
-            "ALTER TABLE knowledge_sources ADD COLUMN IF NOT EXISTS source_group_name VARCHAR(255);",
-            "ALTER TABLE knowledge_sources ADD COLUMN IF NOT EXISTS group_title VARCHAR(255);",
-            "ALTER TABLE knowledge_sources ADD COLUMN IF NOT EXISTS message_link VARCHAR(500);",
-            "ALTER TABLE knowledge_sources ADD COLUMN IF NOT EXISTS metadata_json JSON DEFAULT '{}'::json;",
-            "ALTER TABLE knowledge_sources ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();",
+    for table, col, col_type in migration_columns:
+        stmt_str = f"ALTER TABLE {table} ADD COLUMN {col} {col_type};"
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(stmt_str))
+        except Exception:
+            # Column already exists or table is being created
+            pass
 
-            # 3. knowledge_embeddings
-            "ALTER TABLE knowledge_embeddings ADD COLUMN IF NOT EXISTS embedding JSON;",
-            "ALTER TABLE knowledge_embeddings ADD COLUMN IF NOT EXISTS embedding_json JSON;",
-            "ALTER TABLE knowledge_embeddings ADD COLUMN IF NOT EXISTS model_name VARCHAR(100) DEFAULT 'gemini-embedding-001';",
-            "ALTER TABLE knowledge_embeddings ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();",
-
-            # 4. users
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(100);",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();",
-
-            # 5. telegram_groups
-            "ALTER TABLE telegram_groups ADD COLUMN IF NOT EXISTS username VARCHAR(100);",
-            "ALTER TABLE telegram_groups ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;",
-            "ALTER TABLE telegram_groups ADD COLUMN IF NOT EXISTS reply_enabled BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE telegram_groups ADD COLUMN IF NOT EXISTS learning_enabled BOOLEAN DEFAULT TRUE;",
-            "ALTER TABLE telegram_groups ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMP;",
-            "ALTER TABLE telegram_groups ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();",
-
-            # 6. telegram_messages
-            "ALTER TABLE telegram_messages ADD COLUMN IF NOT EXISTS user_id BIGINT;",
-            "ALTER TABLE telegram_messages ADD COLUMN IF NOT EXISTS sender_name VARCHAR(255);",
-            "ALTER TABLE telegram_messages ADD COLUMN IF NOT EXISTS username VARCHAR(100);",
-            "ALTER TABLE telegram_messages ADD COLUMN IF NOT EXISTS text TEXT;",
-            "ALTER TABLE telegram_messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(50) DEFAULT 'text';",
-            "ALTER TABLE telegram_messages ADD COLUMN IF NOT EXISTS file_id VARCHAR(255);",
-            "ALTER TABLE telegram_messages ADD COLUMN IF NOT EXISTS reply_to_message_id BIGINT;",
-            "ALTER TABLE telegram_messages ADD COLUMN IF NOT EXISTS is_processed BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE telegram_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();",
-
-            # 7. unresolved_queries
-            """
-            CREATE TABLE IF NOT EXISTS unresolved_queries (
-                id SERIAL PRIMARY KEY,
-                query_text TEXT NOT NULL,
-                context TEXT,
-                chat_id BIGINT,
-                user_id BIGINT,
-                sender_name VARCHAR(255),
-                status VARCHAR(50) DEFAULT 'pending' NOT NULL,
-                created_at TIMESTAMP DEFAULT NOW() NOT NULL,
-                resolved_at TIMESTAMP
-            );
-            """,
-            "ALTER TABLE unresolved_queries ADD COLUMN IF NOT EXISTS admin_solution TEXT;"
-        ]
-        for stmt in migration_statements:
-            try:
-                async with engine.begin() as conn:
-                    await conn.execute(text(stmt))
-            except Exception as me:
-                logger.debug(f"Migration note ({stmt.strip()[:40]}): {me}")
-        logger.info("Comprehensive database schema columns synchronized successfully.")
+    logger.info("Database schema columns migrated successfully.")
 
     # Seed Admin Users and Default Settings
     async with async_session_factory() as session:
